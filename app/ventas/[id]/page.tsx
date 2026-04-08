@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect, notFound } from "next/navigation"
 
+import { VentaItem } from "@prisma/client"
+
 export const dynamic = "force-dynamic"
 
 export default async function VentaDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -40,13 +42,13 @@ export default async function VentaDetailPage({ params }: { params: Promise<{ id
     date: ticket.fecha.toISOString(),
     status: ticket.estado,
     localName: ticket.local.nombre,
-    items: ticket.items.map(item => ({
+    items: ticket.items.map((item: VentaItem) => ({
       ...item,
       // Pass these directly as numbers since prisma adapter might return instances of Decimal
       cantidad: Number(item.cantidad),
       precioUnitario: Number(item.precioUnitario),
       subtotal: Number(item.subtotal)
-    })) as any[]
+    }))
   }
 
   return (

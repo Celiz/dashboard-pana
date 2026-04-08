@@ -121,15 +121,20 @@ async function handleKapsoMessage(incomingMsg: any) {
 
         // 5. Armar el Prompt para Gemini
         const prompt = `
-  Sos un asistente automatizado para una panadería. Analizá esta imagen que contiene el registro de ventas y gastos escritos a mano.
-  Note que una sola hoja puede contener registros de VARIOS DÍAS (ej: Lunes 09, Martes 10) o de un solo día.
+  Sos un asistente automatizado para una panadería. Analizá esta imagen que contiene el registro de ventas y gastos escritos a mano en un cuaderno.
+  
+  Estructura del Cuaderno:
+  El cuaderno sigue un patrón de tres columnas verticales (aunque no siempre tengan títulos explícitos):
+  [Concepto / Producto] | [Ingreso (Ventas)] | [Egreso (Gastos/Salidas)]
 
+  Note que una sola hoja puede contener registros de VARIOS DÍAS (ej: Lunes 09, Martes 10) o de un solo día.
+  
   Extraé la información agrupada por fecha. Si hay varios días en una sola hoja, separalos claramente.
   
-  Buscamos extraer tres tipos de información:
-  1. Ventas (Ingresos): Productos y sus precios, o montos finales de venta.
-  2. Gastos (Salidas/Egresos): Conceptos como "Leña", "Harina", "Luz", "Sueldos" con sus montos.
-  3. Fecha: Buscá los encabezados de fecha (ej: "Lunes 09.03.26").
+  Reglas de Extracción Basadas en Columnas:
+  1. Concepto (Columna Izquierda): Es el nombre del producto vendido o el motivo del gasto.
+  2. Columna del Medio (Ingreso): Todo monto ubicado en esta columna debe ser clasificado como VENTA.
+  3. Columna Derecha (Egreso): Todo monto ubicado en esta columna debe ser clasificado como GASTO.
 
   Devolveme ÚNICAMENTE un objeto JSON válido con la siguiente estructura (un array de reportes), sin markdown ni texto adicional:
   {
@@ -138,16 +143,16 @@ async function handleKapsoMessage(incomingMsg: any) {
         "fecha": "YYYY-MM-DD or null if not found",
         "ventas": [
           {
-            "producto": "string",
-            "cantidad": numero,
-            "precioUnitario": numero,
-            "subtotal": numero
+            "producto": "string (nombre del concepto)",
+            "cantidad": numero (1 si no se especifica),
+            "precioUnitario": numero (monto en col. medio),
+            "subtotal": numero (monto en col. medio)
           }
         ],
         "gastos": [
           {
-            "concepto": "string",
-            "monto": numero
+            "concepto": "string (nombre del concepto)",
+            "monto": numero (monto en col. derecha)
           }
         ]
       }
@@ -156,8 +161,8 @@ async function handleKapsoMessage(incomingMsg: any) {
   
   Reglas vitales:
   - Para la fecha, usa el año actual (2026) si no se especifica. El formato DEBE ser YYYY-MM-DD.
-  - Si una línea parece un gasto (ej: "Harina 5000" en columna de salida o con signo menos), ponelo en "gastos".
-  - Si en la imagen SOLO hay montos sueltos sin nombre de producto, poné "Venta General" en el campo producto de "ventas".
+  - El criterio principal es la POSICIÓN: si el monto está a la derecha, es GASTO. Si está al medio, es VENTA.
+  - Si en la imagen SOLO hay montos al medio sin nombre de producto, poné "Venta General" en el campo producto de "ventas".
   - Si no encontrás una fecha para un bloque de información, poné null en el campo "fecha".
 `;
 

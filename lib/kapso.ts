@@ -96,3 +96,13 @@ export async function downloadKapsoMedia(mediaId: string): Promise<Buffer> {
 export function bufferToBase64(buffer: Buffer, mimeType: string = 'image/jpeg') {
     return `data:${mimeType};base64,${buffer.toString('base64')}`;
 }
+
+/**
+ * Utility to track performance of processing stages.
+ */
+export function createTimer() {
+    const start = performance.now();
+    return {
+        stop: () => ((performance.now() - start) / 1000).toFixed(2) + "s"
+    };
+}

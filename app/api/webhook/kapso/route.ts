@@ -1,7 +1,7 @@
 // app/api/webhook/kapso/route.ts
 import { NextRequest, NextResponse, after } from "next/server";
 import { normalizeWebhook, verifySignature } from "@kapso/whatsapp-cloud-api/server";
-import { sendKapsoText, downloadKapsoMedia, markKapsoMessageReadWithTyping } from "@/lib/kapso";
+import { sendKapsoText, downloadKapsoMedia, markKapsoMessageReadWithTyping, createTimer } from "@/lib/kapso";
 import prisma from "@/lib/prisma"; // Asegurate de ajustar esta ruta a donde tengas tu Prisma Client
 import { GoogleGenAI } from "@google/genai";
 
@@ -37,22 +37,29 @@ export async function POST(req: NextRequest) {
     // Devolvemos 200 INMEDIATAMENTE y procesamos la IA de fondo. 
     // Usamos after() de Next.js que es seguro para entornos Serverless como Vercel.
     after(async () => {
+        const totalTimer = createTimer();
+        console.log("[webhook] Kapso: Iniciando procesamiento de fondo...");
+
         try {
+            let messagesToProcess: any[] = [];
+
             // Manejo de la estructura de Kapso
             if (payload.type === "whatsapp.message.received" && Array.isArray(payload.data)) {
-                for (const item of payload.data) {
-                    if (item.message) {
-                        await handleKapsoMessage(item.message);
-                    }
-                }
+                messagesToProcess = payload.data.filter((item: any) => item.message).map((item: any) => item.message);
             } else {
                 const events = normalizeWebhook(payload);
-                for (const msg of events.messages) {
-                    await handleKapsoMessage(msg);
-                }
+                messagesToProcess = events.messages;
+            }
+
+            if (messagesToProcess.length > 0) {
+                console.log(`[webhook] Kapso: Procesando ${messagesToProcess.length} mensajes en paralelo...`);
+                // PROCESAMIENTO EN PARALELO 🚀
+                await Promise.all(messagesToProcess.map(msg => handleKapsoMessage(msg)));
             }
         } catch (err) {
             console.error("[webhook] Error procesando evento de Kapso de fondo:", err);
+        } finally {
+            console.log(`[webhook] Kapso: Procesamiento total completado en ${totalTimer.stop()}`);
         }
     });
 
@@ -107,8 +114,10 @@ async function handleKapsoMessage(incomingMsg: any) {
         }
 
         // 4. Descargar la imagen desde Kapso
+        const downloadTimer = createTimer();
         const imageBuffer = await downloadKapsoMedia(incomingMsg.image.id);
         const mimeType = incomingMsg.image.mime_type || "image/jpeg";
+        console.log(`[webhook] Media descargada (${(imageBuffer.length / 1024).toFixed(2)} KB) en ${downloadTimer.stop()}`);
 
         // 5. Armar el Prompt para Gemini
         const prompt = `
@@ -146,6 +155,7 @@ async function handleKapsoMessage(incomingMsg: any) {
 `;
 
         // 6. Consultar a la IA (Usamos flash porque es rápido y barato)
+        const aiTimer = createTimer();
         const response = await ai.models.generateContent({
             model: 'gemini-3.1-flash-lite-preview',
             contents: [
@@ -165,6 +175,7 @@ async function handleKapsoMessage(incomingMsg: any) {
 
         const jsonText = response.text || "{}";
         const extraido = JSON.parse(jsonText);
+        console.log(`[webhook] Gemini procesó la imagen en ${aiTimer.stop()}`);
 
         const ventas = extraido.ventas || [];
         const gastos = extraido.gastos || [];
@@ -186,45 +197,49 @@ async function handleKapsoMessage(incomingMsg: any) {
         }
 
         // 7. Guardar en Prisma
+        const dbTimer = createTimer();
         let totalVentas = 0;
         let totalGastos = 0;
 
-        // Guardar Ticket de Ventas si hay
-        if (ventas.length > 0) {
-            await prisma.ticketDiario.create({
-                data: {
-                    localId: local.id,
-                    fecha: fechaDetectada,
-                    estado: "procesado",
-                    items: {
-                        create: ventas.map((item: any) => {
-                            totalVentas += Number(item.subtotal);
-                            return {
-                                producto: item.producto,
-                                cantidad: Number(item.cantidad),
-                                precioUnitario: Number(item.precioUnitario),
-                                subtotal: Number(item.subtotal)
-                            };
-                        })
-                    }
-                }
-            });
-        }
-
-        // Guardar Gastos si hay
-        if (gastos.length > 0) {
-            for (const gasto of gastos) {
-                totalGastos += Number(gasto.monto);
-                await prisma.gasto.create({
+        // Usamos una transacción para que sea atómico y más eficiente
+        await prisma.$transaction(async (tx) => {
+            // Guardar Ticket de Ventas si hay
+            if (ventas.length > 0) {
+                await tx.ticketDiario.create({
                     data: {
+                        localId: local.id,
+                        fecha: fechaDetectada,
+                        estado: "procesado",
+                        items: {
+                            create: ventas.map((item: any) => {
+                                totalVentas += Number(item.subtotal);
+                                return {
+                                    producto: item.producto,
+                                    cantidad: Number(item.cantidad),
+                                    precioUnitario: Number(item.precioUnitario),
+                                    subtotal: Number(item.subtotal)
+                                };
+                            })
+                        }
+                    }
+                });
+            }
+
+            // Guardar Gastos si hay - Usamos createMany para eficiencia máxima 🚀
+            if (gastos.length > 0) {
+                const gastosData = gastos.map((gasto: any) => {
+                    totalGastos += Number(gasto.monto);
+                    return {
                         localId: local.id,
                         fecha: fechaDetectada,
                         concepto: gasto.concepto,
                         monto: Number(gasto.monto)
-                    }
+                    };
                 });
+                await tx.gasto.createMany({ data: gastosData });
             }
-        }
+        });
+        console.log(`[webhook] Base de datos actualizada en ${dbTimer.stop()}`);
 
         // 8. Confirmación final por WhatsApp
         let mensajeConfirmacion = `✅ ¡Procesado correctamente!`;

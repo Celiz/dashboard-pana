@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Local {
+  id          String         @id @default(uuid())
+  nombre      String
+  telefonos   TelefonoLocal[]
+  tickets     TicketDiario[]
+  users       User[]
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Mapea a minúsculas en Postgres (buenas prácticas de bases de datos relacionales)
+  @@map("locales")       
+}
+
+model TelefonoLocal {
+  id        String   @id @default(uuid())
+  numero    String   @unique
+  localId   String
+  local     Local    @relation(fields: [localId], references: [id], onDelete: Cascade)
+  
+  @@index([numero])
+  @@map("telefonos_locales")
+}
+
+model TicketDiario {
+  id        String      @id @default(uuid())
+  localId   String
+  // onDelete: Cascade asegura que si el día de mañana borrás un Local, se borran sus tickets
+  local     Local       @relation(fields: [localId], references: [id], onDelete: Cascade)
+  fecha     DateTime    @default(now())
+  imagenUrl String?     
+  estado    String      @default("procesado") 
+  items     VentaItem[]
+  
+  // Índices para acelerar los filtros del dashboard cuando consultes por fecha o por local
+  @@index([localId])
+  @@index([fecha]) 
+  
+  @@map("tickets_diarios")
+}
+
+model VentaItem {
+  id             String       @id @default(uuid())
+  ticketId       String
+  // Si borrás un ticket porque se leyó mal, se borran sus items automáticamente
+  ticket         TicketDiario @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  producto       String
+  
+  // Especificamos la precisión de los decimales (10 dígitos en total, 2 después de la coma)
+  // Fundamental para que Prisma y Postgres no tengan problemas de redondeo con la plata
+  cantidad       Decimal      @db.Decimal(10, 2)
+  precioUnitario Decimal      @db.Decimal(10, 2)
+  subtotal       Decimal      @db.Decimal(10, 2)
+
+  @@index([ticketId])
+  
+  @@map("ventas_items")
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime
+  updatedAt     DateTime
+  sessions      Session[]
+  accounts      Account[]
+
+  username      String?   @unique
+  displayUsername String?
+  localId       String?
+  local         Local?    @relation(fields: [localId], references: [id])
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}

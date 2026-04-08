@@ -90,3 +90,16 @@ export async function deleteVentaItem(itemId: string) {
   revalidatePath(`/ventas/${item.ticketId}`)
   revalidatePath("/ventas")
 }
+
+export async function updateTicketDate(ticketId: string, fecha: Date) {
+  await checkTicketPermission(ticketId)
+
+  await prisma.ticketDiario.update({
+    where: { id: ticketId },
+    data: { fecha }
+  })
+
+  revalidatePath(`/ventas/${ticketId}`)
+  revalidatePath("/ventas")
+  revalidatePath("/")
+}

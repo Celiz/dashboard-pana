@@ -100,9 +100,15 @@ export default async function DashboardPage(props: {
                     <div className="flex items-center gap-3">
                         <a
                             href="/ventas"
+                            className="inline-flex items-center justify-center px-6 py-2.5 rounded-full bg-secondary text-secondary-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-colors font-medium border border-border"
+                        >
+                            Ver Ventas
+                        </a>
+                        <a
+                            href="/gastos"
                             className="inline-flex items-center justify-center px-6 py-2.5 rounded-full bg-brand-croissant text-white hover:bg-brand-croissant/90 transition-colors font-medium shadow-sm"
                         >
-                            Ver Todas las Ventas
+                            Ver Gastos
                         </a>
                         <LogoutButton />
                     </div>

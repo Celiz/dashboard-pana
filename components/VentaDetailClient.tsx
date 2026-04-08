@@ -4,7 +4,7 @@ import Link from "next/link"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { ArrowLeft, Store, Calendar, Printer, CheckCircle2, Ticket, Trash2, Edit2, Check, X } from "lucide-react"
-import { deleteTicket, updateVentaItem, deleteVentaItem } from "@/app/actions/ventas"
+import { deleteTicket, updateVentaItem, deleteVentaItem, updateTicketDate } from "@/app/actions/ventas"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 
@@ -25,6 +25,8 @@ export function VentaDetailClient({ ticket }: VentaDetailClientProps) {
   const router = useRouter()
   const [isDeleting, setIsDeleting] = useState(false)
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [isEditingDate, setIsEditingDate] = useState(false)
+  const [newDate, setNewDate] = useState(ticket.date)
   const [editForm, setEditForm] = useState<{producto: string, cantidad: number, precioUnitario: number}>({
     producto: "",
     cantidad: 0,
@@ -59,6 +61,16 @@ export function VentaDetailClient({ ticket }: VentaDetailClientProps) {
       router.refresh()
     } catch (error) {
       alert("Error al actualizar el ítem")
+    }
+  }
+
+  const handleUpdateDate = async () => {
+    try {
+      await updateTicketDate(ticket.id, new Date(newDate))
+      setIsEditingDate(false)
+      router.refresh()
+    } catch (error) {
+      alert("Error al actualizar la fecha")
     }
   }
 
@@ -135,15 +147,40 @@ export function VentaDetailClient({ ticket }: VentaDetailClientProps) {
             </div>
             
             <div>
-              <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-2 flex items-center gap-2">
-                <Calendar className="w-4 h-4" /> Fecha
+              <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-2"><Calendar className="w-4 h-4" /> Fecha</span>
+                <button 
+                  onClick={() => setIsEditingDate(!isEditingDate)}
+                  className="text-brand-croissant hover:underline text-[10px]"
+                >
+                  {isEditingDate ? 'Cancelar' : 'Editar'}
+                </button>
               </p>
-              <p className="font-medium">
-                {format(new Date(ticket.date), "EEEE, d 'de' MMMM", { locale: es })}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {format(new Date(ticket.date), "HH:mm 'hs'", { locale: es })}
-              </p>
+              {isEditingDate ? (
+                <div className="space-y-2">
+                  <input
+                    type="datetime-local"
+                    className="w-full bg-background border border-border rounded px-2 py-1 text-xs"
+                    value={format(new Date(newDate), "yyyy-MM-dd'T'HH:mm")}
+                    onChange={(e) => setNewDate(e.target.value)}
+                  />
+                  <button
+                    onClick={handleUpdateDate}
+                    className="w-full py-1 bg-brand-croissant text-white rounded text-xs font-medium hover:bg-brand-croissant/90 transition-colors"
+                  >
+                    Guardar Fecha
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="font-medium">
+                    {format(new Date(ticket.date), "EEEE, d 'de' MMMM", { locale: es })}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {format(new Date(ticket.date), "HH:mm 'hs'", { locale: es })}
+                  </p>
+                </>
+              )}
             </div>
 
             <div>

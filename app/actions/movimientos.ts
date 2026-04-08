@@ -57,3 +57,36 @@ export async function createManualVenta(data: { localId: string, fecha: Date, pr
   revalidatePath("/")
   revalidatePath("/ventas")
 }
+
+export async function updateGasto(id: string, data: { fecha?: Date, concepto?: string, monto?: number }) {
+  const gasto = await prisma.gasto.findUnique({ where: { id } })
+  if (!gasto) throw new Error("Gasto no encontrado")
+  
+  await checkLocalPermission(gasto.localId)
+
+  await prisma.gasto.update({
+    where: { id },
+    data: {
+      fecha: data.fecha,
+      concepto: data.concepto,
+      monto: data.monto
+    }
+  })
+
+  revalidatePath("/")
+  revalidatePath("/gastos")
+}
+
+export async function deleteGasto(id: string) {
+  const gasto = await prisma.gasto.findUnique({ where: { id } })
+  if (!gasto) throw new Error("Gasto no encontrado")
+  
+  await checkLocalPermission(gasto.localId)
+
+  await prisma.gasto.delete({
+    where: { id }
+  })
+
+  revalidatePath("/")
+  revalidatePath("/gastos")
+}

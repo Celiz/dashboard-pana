@@ -112,23 +112,36 @@ async function handleKapsoMessage(incomingMsg: any) {
 
         // 5. Armar el Prompt para Gemini
         const prompt = `
-  Sos un asistente automatizado para una panadería. Analizá esta imagen que contiene el registro de ventas del día escrito a mano.
+  Sos un asistente automatizado para una panadería. Analizá esta imagen que contiene el registro de ventas y gastos del día escrito a mano.
   
-  Puede haber dos escenarios:
-  1. Que anoten el producto y el precio (ej: "Pan 2000").
-  2. Que anoten SOLAMENTE los números finales de cada venta (ej: "1500", "3000").
+  Buscamos extraer tres tipos de información:
+  1. Ventas (Ingresos): Productos y sus precios, o montos finales de venta.
+  2. Gastos (Salidas/Egresos): Conceptos como "Leña", "Harina", "Luz", "Sueldos" con sus montos. A veces anotados con signo menos o en una columna de "Salida".
+  3. Fecha: Buscá si hay una fecha escrita en el papel (ej: "07/04/24" o "Lunes 7").
 
-  Devolveme ÚNICAMENTE un arreglo JSON válido con la siguiente estructura exacta, sin markdown ni texto adicional:
-  [
-    {
-      "producto": "string",
-      "cantidad": numero,
-      "precioUnitario": numero,
-      "subtotal": numero
-    }
-  ]
+  Devolveme ÚNICAMENTE un objeto JSON válido con la siguiente estructura, sin markdown ni texto adicional:
+  {
+    "fecha": "ISO date string or null if not found",
+    "ventas": [
+      {
+        "producto": "string",
+        "cantidad": numero,
+        "precioUnitario": numero,
+        "subtotal": numero
+      }
+    ],
+    "gastos": [
+      {
+        "concepto": "string",
+        "monto": numero
+      }
+    ]
+  }
   
-  Regla vital: Si en la imagen SOLO hay montos sueltos sin nombre de producto, poné "Venta General" en el campo producto, cantidad 1, y usá el monto leído tanto en precioUnitario como en subtotal.
+  Reglas vitales:
+  - Si una línea parece un gasto (ej: "Harina 5000" en columna de salida o con signo menos), ponelo en "gastos".
+  - Si en la imagen SOLO hay montos sueltos sin nombre de producto, poné "Venta General" en el campo producto de "ventas".
+  - Si no encontrás una fecha, poné null en el campo "fecha".
 `;
 
         // 6. Consultar a la IA (Usamos flash porque es rápido y barato)
@@ -149,39 +162,66 @@ async function handleKapsoMessage(incomingMsg: any) {
             }
         });
 
-        const jsonText = response.text || "[]";
-        const ventasExtraidas = JSON.parse(jsonText);
+        const jsonText = response.text || "{}";
+        const extraido = JSON.parse(jsonText);
 
-        if (ventasExtraidas.length === 0) {
-            throw new Error("La IA devolvió un array vacío");
+        const ventas = extraido.ventas || [];
+        const gastos = extraido.gastos || [];
+        const fechaDetectada = extraido.fecha ? new Date(extraido.fecha) : new Date();
+
+        if (ventas.length === 0 && gastos.length === 0) {
+            throw new Error("La IA no detectó ni ventas ni gastos");
         }
 
-        // 7. Guardar en Prisma (Nested write: creamos el ticket y sus items de una)
-        let totalDelDia = 0;
+        // 7. Guardar en Prisma
+        let totalVentas = 0;
+        let totalGastos = 0;
 
-        await prisma.ticketDiario.create({
-            data: {
-                localId: local.id,
-                estado: "procesado",
-                items: {
-                    create: ventasExtraidas.map((item: any) => {
-                        totalDelDia += Number(item.subtotal);
-                        return {
-                            producto: item.producto,
-                            cantidad: Number(item.cantidad),
-                            precioUnitario: Number(item.precioUnitario),
-                            subtotal: Number(item.subtotal)
-                        };
-                    })
+        // Guardar Ticket de Ventas si hay
+        if (ventas.length > 0) {
+            await prisma.ticketDiario.create({
+                data: {
+                    localId: local.id,
+                    fecha: fechaDetectada,
+                    estado: "procesado",
+                    items: {
+                        create: ventas.map((item: any) => {
+                            totalVentas += Number(item.subtotal);
+                            return {
+                                producto: item.producto,
+                                cantidad: Number(item.cantidad),
+                                precioUnitario: Number(item.precioUnitario),
+                                subtotal: Number(item.subtotal)
+                            };
+                        })
+                    }
                 }
+            });
+        }
+
+        // Guardar Gastos si hay
+        if (gastos.length > 0) {
+            for (const gasto of gastos) {
+                totalGastos += Number(gasto.monto);
+                await prisma.gasto.create({
+                    data: {
+                        localId: local.id,
+                        fecha: fechaDetectada,
+                        concepto: gasto.concepto,
+                        monto: Number(gasto.monto)
+                    }
+                });
             }
-        });
+        }
 
         // 8. Confirmación final por WhatsApp
-        await sendKapsoText(
-            senderPhone,
-            `✅ ¡Listo! Registré ${ventasExtraidas.length} productos.\nTotal del día: $${totalDelDia.toFixed(2)}.\nYa podés verlo en el dashboard.`
-        );
+        let mensajeConfirmacion = `✅ ¡Procesado correctamente!`;
+        if (ventas.length > 0) mensajeConfirmacion += `\n💰 Ventas: $${totalVentas.toFixed(2)} (${ventas.length} ítems).`;
+        if (gastos.length > 0) mensajeConfirmacion += `\n💸 Gastos: $${totalGastos.toFixed(2)} (${gastos.length} conceptos).`;
+        mensajeConfirmacion += `\n📈 Neto: $${(totalVentas - totalGastos).toFixed(2)}.`;
+        mensajeConfirmacion += `\n📅 Fecha: ${fechaDetectada.toLocaleDateString('es-AR')}.`;
+
+        await sendKapsoText(senderPhone, mensajeConfirmacion);
         console.log(`✅ Ticket procesado para ${local.nombre}`);
 
     } catch (error) {

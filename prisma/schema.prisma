@@ -11,6 +11,7 @@ model Local {
   nombre      String
   telefonos   TelefonoLocal[]
   tickets     TicketDiario[]
+  gastos      Gasto[]
   users       User[]
 
   createdAt   DateTime       @default(now())
@@ -127,4 +128,17 @@ model Verification {
   updatedAt  DateTime?
 
   @@map("verification")
+}
+
+model Gasto {
+  id          String   @id @default(uuid())
+  localId     String
+  local       Local    @relation(fields: [localId], references: [id], onDelete: Cascade)
+  fecha       DateTime @default(now())
+  concepto    String
+  monto       Decimal  @db.Decimal(10, 2)
+  
+  @@index([localId])
+  @@index([fecha])
+  @@map("gastos")
 }

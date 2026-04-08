@@ -10,6 +10,7 @@ export type Telefono = { id: string; numero: string };
 export type Local = { id: string; nombre: string; telefonos: Telefono[] };
 export type VentaItem = { id: string; producto: string; cantidad: number; precioUnitario: number; subtotal: number };
 export type TicketDiario = { id: string; localId: string; fecha: string; estado: string; items: VentaItem[] };
+export type Gasto = { id: string; localId: string; fecha: string; concepto: string; monto: number };
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,9 @@ export default async function DashboardPage(props: {
         where: ticketFilter,
         include: { items: true }
     })
+    const dbGastos = await prisma.gasto.findMany({
+        where: ticketFilter, // El filtro de fecha y localId es el mismo
+    })
 
     // Format data for Client Component (converting Dates to strings and Decimals to numbers)
     const locales: Local[] = dbLocales.map((local: any) => ({
@@ -77,6 +81,14 @@ export default async function DashboardPage(props: {
         }))
     }))
 
+    const gastos: Gasto[] = dbGastos.map((gasto: any) => ({
+        id: gasto.id,
+        localId: gasto.localId,
+        fecha: gasto.fecha.toISOString(),
+        concepto: gasto.concepto,
+        monto: Number(gasto.monto),
+    }))
+
     return (
         <div className="min-h-screen relative z-10 selection:bg-brand-croissant selection:text-white">
             <main className="container mx-auto p-4 md:p-8 lg:p-12 max-w-7xl">
@@ -99,6 +111,7 @@ export default async function DashboardPage(props: {
                 <DashboardClient
                     locales={locales}
                     tickets={tickets}
+                    gastos={gastos}
                     userLocalId={session.user.localId || undefined}
                 />
             </main>

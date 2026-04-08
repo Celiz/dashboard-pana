@@ -121,28 +121,35 @@ async function handleKapsoMessage(incomingMsg: any) {
 
         // 5. Armar el Prompt para Gemini
         const prompt = `
-  Sos un asistente automatizado para una panadería. Analizá esta imagen que contiene el registro de ventas y gastos del día escrito a mano.
+  Sos un asistente automatizado para una panadería. Analizá esta imagen que contiene el registro de ventas y gastos escritos a mano.
+  Note que una sola hoja puede contener registros de VARIOS DÍAS (ej: Lunes 09, Martes 10) o de un solo día.
+
+  Extraé la información agrupada por fecha. Si hay varios días en una sola hoja, separalos claramente.
   
   Buscamos extraer tres tipos de información:
   1. Ventas (Ingresos): Productos y sus precios, o montos finales de venta.
-  2. Gastos (Salidas/Egresos): Conceptos como "Leña", "Harina", "Luz", "Sueldos" con sus montos. A veces anotados con signo menos o en una columna de "Salida".
-  3. Fecha: Buscá si hay una fecha escrita en el papel (ej: "07/04/24" o "Lunes 7").
+  2. Gastos (Salidas/Egresos): Conceptos como "Leña", "Harina", "Luz", "Sueldos" con sus montos.
+  3. Fecha: Buscá los encabezados de fecha (ej: "Lunes 09.03.26").
 
-  Devolveme ÚNICAMENTE un objeto JSON válido con la siguiente estructura, sin markdown ni texto adicional:
+  Devolveme ÚNICAMENTE un objeto JSON válido con la siguiente estructura (un array de reportes), sin markdown ni texto adicional:
   {
-    "fecha": "YYYY-MM-DD or null if not found",
-    "ventas": [
+    "reportes": [
       {
-        "producto": "string",
-        "cantidad": numero,
-        "precioUnitario": numero,
-        "subtotal": numero
-      }
-    ],
-    "gastos": [
-      {
-        "concepto": "string",
-        "monto": numero
+        "fecha": "YYYY-MM-DD or null if not found",
+        "ventas": [
+          {
+            "producto": "string",
+            "cantidad": numero,
+            "precioUnitario": numero,
+            "subtotal": numero
+          }
+        ],
+        "gastos": [
+          {
+            "concepto": "string",
+            "monto": numero
+          }
+        ]
       }
     ]
   }
@@ -151,7 +158,7 @@ async function handleKapsoMessage(incomingMsg: any) {
   - Para la fecha, usa el año actual (2026) si no se especifica. El formato DEBE ser YYYY-MM-DD.
   - Si una línea parece un gasto (ej: "Harina 5000" en columna de salida o con signo menos), ponelo en "gastos".
   - Si en la imagen SOLO hay montos sueltos sin nombre de producto, poné "Venta General" en el campo producto de "ventas".
-  - Si no encontrás una fecha, poné null en el campo "fecha".
+  - Si no encontrás una fecha para un bloque de información, poné null en el campo "fecha".
 `;
 
         // 6. Consultar a la IA (Usamos flash porque es rápido y barato)
@@ -177,76 +184,103 @@ async function handleKapsoMessage(incomingMsg: any) {
         const extraido = JSON.parse(jsonText);
         console.log(`[webhook] Gemini procesó la imagen en ${aiTimer.stop()}`);
 
-        const ventas = extraido.ventas || [];
-        const gastos = extraido.gastos || [];
+        const reportes = extraido.reportes || [];
         
-        // Manejo de fecha con Zona Horaria de Argentina (GMT-3)
-        let fechaDetectada: Date;
-        if (extraido.fecha && typeof extraido.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(extraido.fecha)) {
-            // Si viene YYYY-MM-DD, le forzamos 12:00 en Argentina para evitar saltos de día por horas
-            fechaDetectada = new Date(`${extraido.fecha}T12:00:00-03:00`);
-        } else {
-            // Si no detecta, usamos el "ahora" en Argentina
-            const ahora = new Date();
-            // Ajustamos a mediodía local para consistencia si es una creación nueva
-            fechaDetectada = ahora;
+        if (reportes.length === 0) {
+            throw new Error("La IA no detectó ni ventas ni gastos en ningún reporte");
         }
 
-        if (ventas.length === 0 && gastos.length === 0) {
-            throw new Error("La IA no detectó ni ventas ni gastos");
-        }
+        const resumenResultados = [];
 
-        // 7. Guardar en Prisma
-        const dbTimer = createTimer();
-        let totalVentas = 0;
-        let totalGastos = 0;
+        // 7. Procesar cada reporte encontrado (soporte para múltiples fechas por foto)
+        for (const reporte of reportes) {
+            const ventas = reporte.ventas || [];
+            const gastos = reporte.gastos || [];
+            
+            if (ventas.length === 0 && gastos.length === 0) continue;
 
-        // Usamos una transacción para que sea atómico y más eficiente
-        await prisma.$transaction(async (tx) => {
-            // Guardar Ticket de Ventas si hay
-            if (ventas.length > 0) {
-                await tx.ticketDiario.create({
-                    data: {
-                        localId: local.id,
-                        fecha: fechaDetectada,
-                        estado: "procesado",
-                        items: {
-                            create: ventas.map((item: any) => {
-                                totalVentas += Number(item.subtotal);
-                                return {
-                                    producto: item.producto,
-                                    cantidad: Number(item.cantidad),
-                                    precioUnitario: Number(item.precioUnitario),
-                                    subtotal: Number(item.subtotal)
-                                };
-                            })
+            // Manejo de fecha con Zona Horaria de Argentina (GMT-3)
+            let fechaDetectada: Date;
+            if (reporte.fecha && typeof reporte.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(reporte.fecha)) {
+                // Si viene YYYY-MM-DD, le forzamos 12:00 en Argentina para evitar saltos de día por horas
+                fechaDetectada = new Date(`${reporte.fecha}T12:00:00-03:00`);
+            } else {
+                // Si no detecta, usamos el "ahora" en Argentina (o podrías intentar heredar la fecha del reporte anterior si esto es una lista)
+                fechaDetectada = new Date();
+            }
+
+            let totalVentasDia = 0;
+            let totalGastosDia = 0;
+
+            // Guardar en Prisma dentro de una transacción por cada día
+            await prisma.$transaction(async (tx) => {
+                // Guardar Ticket de Ventas si hay
+                if (ventas.length > 0) {
+                    await tx.ticketDiario.create({
+                        data: {
+                            localId: local.id,
+                            fecha: fechaDetectada,
+                            estado: "procesado",
+                            items: {
+                                create: ventas.map((item: any) => {
+                                    totalVentasDia += Number(item.subtotal);
+                                    return {
+                                        producto: item.producto,
+                                        cantidad: Number(item.cantidad),
+                                        precioUnitario: Number(item.precioUnitario),
+                                        subtotal: Number(item.subtotal)
+                                    };
+                                })
+                            }
                         }
-                    }
-                });
-            }
+                    });
+                }
 
-            // Guardar Gastos si hay - Usamos createMany para eficiencia máxima 🚀
-            if (gastos.length > 0) {
-                const gastosData = gastos.map((gasto: any) => {
-                    totalGastos += Number(gasto.monto);
-                    return {
-                        localId: local.id,
-                        fecha: fechaDetectada,
-                        concepto: gasto.concepto,
-                        monto: Number(gasto.monto)
-                    };
-                });
-                await tx.gasto.createMany({ data: gastosData });
-            }
-        });
-        console.log(`[webhook] Base de datos actualizada en ${dbTimer.stop()}`);
+                // Guardar Gastos si hay
+                if (gastos.length > 0) {
+                    const gastosData = gastos.map((gasto: any) => {
+                        totalGastosDia += Number(gasto.monto);
+                        return {
+                            localId: local.id,
+                            fecha: fechaDetectada,
+                            concepto: gasto.concepto,
+                            monto: Number(gasto.monto)
+                        };
+                    });
+                    await tx.gasto.createMany({ data: gastosData });
+                }
+            });
 
-        // 8. Confirmación final por WhatsApp
+            resumenResultados.push({
+                fecha: fechaDetectada,
+                ventas: totalVentasDia,
+                gastos: totalGastosDia
+            });
+        }
+
+        if (resumenResultados.length === 0) {
+            throw new Error("No se procesaron datos válidos de los reportes");
+        }
+
+        // 8. Confirmación final por WhatsApp resumida
         let mensajeConfirmacion = `✅ ¡Procesado correctamente!`;
-        if (ventas.length > 0) mensajeConfirmacion += `\n💰 Ventas: $${totalVentas.toFixed(2)} (${ventas.length} ítems).`;
-        if (gastos.length > 0) mensajeConfirmacion += `\n💸 Gastos: $${totalGastos.toFixed(2)} (${gastos.length} conceptos).`;
-        mensajeConfirmacion += `\n📈 Neto: $${(totalVentas - totalGastos).toFixed(2)}.`;
-        mensajeConfirmacion += `\n📅 Fecha: ${fechaDetectada.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}.`;
+        
+        if (resumenResultados.length > 1) {
+            mensajeConfirmacion += `\nDetecté ${resumenResultados.length} días en la hoja:`;
+        }
+
+        for (const res of resumenResultados) {
+            const fechaStr = res.fecha.toLocaleDateString('es-AR', { 
+                timeZone: 'America/Argentina/Buenos_Aires',
+                day: '2-digit',
+                month: '2-digit'
+            });
+            
+            mensajeConfirmacion += `\n\n📅 *Día ${fechaStr}*`;
+            if (res.ventas > 0) mensajeConfirmacion += `\n💰 Ventas: $${res.ventas.toLocaleString('es-AR')}`;
+            if (res.gastos > 0) mensajeConfirmacion += `\n💸 Gastos: $${res.gastos.toLocaleString('es-AR')}`;
+            mensajeConfirmacion += `\n📈 Neto: $${(res.ventas - res.gastos).toLocaleString('es-AR')}`;
+        }
 
         await sendKapsoText(senderPhone, mensajeConfirmacion);
         console.log(`✅ Ticket procesado para ${local.nombre}`);

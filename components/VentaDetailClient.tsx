@@ -3,7 +3,10 @@
 import Link from "next/link"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { ArrowLeft, Store, Calendar, Printer, CheckCircle2, Ticket } from "lucide-react"
+import { ArrowLeft, Store, Calendar, Printer, CheckCircle2, Ticket, Trash2, Edit2, Check, X } from "lucide-react"
+import { deleteTicket, updateVentaItem, deleteVentaItem } from "@/app/actions/ventas"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import type { VentaItem } from "@/app/page"
@@ -19,6 +22,56 @@ interface VentaDetailClientProps {
 }
 
 export function VentaDetailClient({ ticket }: VentaDetailClientProps) {
+  const router = useRouter()
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<{producto: string, cantidad: number, precioUnitario: number}>({
+    producto: "",
+    cantidad: 0,
+    precioUnitario: 0
+  })
+
+  const handleDeleteTicket = async () => {
+    if (!confirm("¿Está seguro de que desea eliminar esta venta completa?")) return
+    setIsDeleting(true)
+    try {
+      await deleteTicket(ticket.id)
+      router.push("/ventas")
+    } catch (error) {
+      alert("Error al eliminar la venta")
+      setIsDeleting(false)
+    }
+  }
+
+  const startEditing = (item: VentaItem) => {
+    setEditingItemId(item.id)
+    setEditForm({
+      producto: item.producto,
+      cantidad: Number(item.cantidad),
+      precioUnitario: Number(item.precioUnitario)
+    })
+  }
+
+  const handleUpdateItem = async (itemId: string) => {
+    try {
+      await updateVentaItem(itemId, editForm)
+      setEditingItemId(null)
+      router.refresh()
+    } catch (error) {
+      alert("Error al actualizar el ítem")
+    }
+  }
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!confirm("¿Está seguro de que desea eliminar este producto del ticket?")) return
+    try {
+      await deleteVentaItem(itemId)
+      router.refresh()
+    } catch (error) {
+      alert("Error al eliminar el ítem")
+    }
+  }
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("es-AR", {
       style: "currency",
@@ -51,10 +104,20 @@ export function VentaDetailClient({ ticket }: VentaDetailClientProps) {
           </div>
         </div>
         
-        <button className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors text-sm font-medium">
-          <Printer className="w-4 h-4" />
-          Imprimir comprobante
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleDeleteTicket}
+            disabled={isDeleting}
+            className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 rounded-full transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" />
+            Borrar Todo
+          </button>
+          <button className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors text-sm font-medium">
+            <Printer className="w-4 h-4" />
+            Imprimir
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
@@ -109,25 +172,92 @@ export function VentaDetailClient({ ticket }: VentaDetailClientProps) {
                   <tr className="text-xs uppercase tracking-wider text-muted-foreground border-b border-border/40 pb-2">
                     <th className="pb-3 font-medium w-1/2">Producto</th>
                     <th className="pb-3 text-right font-medium">Cant.</th>
-                    <th className="pb-3 text-right font-medium pr-4 md:pr-8">Precio</th>
+                    <th className="pb-3 text-right font-medium pr-4">Precio</th>
                     <th className="pb-3 text-right font-medium">Total</th>
+                    <th className="pb-3 text-right font-medium">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/20">
                   {ticket.items.map((item) => (
                     <tr key={item.id} className="group">
-                      <td className="py-4 text-sm font-medium pr-2">
-                        {item.producto}
-                      </td>
-                      <td className="py-4 text-sm text-right text-muted-foreground pr-2">
-                        {parseNumber(item.cantidad)}
-                      </td>
-                      <td className="py-4 text-sm text-right text-muted-foreground pr-4 md:pr-8">
-                        {formatCurrency(parseNumber(item.precioUnitario))}
-                      </td>
-                      <td className="py-4 text-base font-serif font-medium text-right">
-                        {formatCurrency(parseNumber(item.subtotal))}
-                      </td>
+                      {editingItemId === item.id ? (
+                        <>
+                          <td className="py-2 pr-2">
+                            <input
+                              type="text"
+                              className="w-full bg-background border border-border rounded px-2 py-1 text-sm"
+                              value={editForm.producto}
+                              onChange={(e) => setEditForm({ ...editForm, producto: e.target.value })}
+                            />
+                          </td>
+                          <td className="py-2 text-right pr-2">
+                            <input
+                              type="number"
+                              className="w-16 bg-background border border-border rounded px-2 py-1 text-sm text-right"
+                              value={editForm.cantidad}
+                              onChange={(e) => setEditForm({ ...editForm, cantidad: Number(e.target.value) })}
+                            />
+                          </td>
+                          <td className="py-2 text-right pr-4">
+                            <input
+                              type="number"
+                              className="w-24 bg-background border border-border rounded px-2 py-1 text-sm text-right"
+                              value={editForm.precioUnitario}
+                              onChange={(e) => setEditForm({ ...editForm, precioUnitario: Number(e.target.value) })}
+                            />
+                          </td>
+                          <td className="py-2 text-right font-serif font-medium">
+                            {formatCurrency(editForm.cantidad * editForm.precioUnitario)}
+                          </td>
+                          <td className="py-2 text-right space-x-1">
+                            <button
+                              onClick={() => handleUpdateItem(item.id)}
+                              className="p-1 rounded hover:bg-brand-matcha/20 text-emerald-600"
+                              title="Guardar"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setEditingItemId(null)}
+                              className="p-1 rounded hover:bg-black/5 text-muted-foreground"
+                              title="Cancelar"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-4 text-sm font-medium pr-2">
+                            {item.producto}
+                          </td>
+                          <td className="py-4 text-sm text-right text-muted-foreground pr-2">
+                            {parseNumber(item.cantidad)}
+                          </td>
+                          <td className="py-4 text-sm text-right text-muted-foreground pr-4">
+                            {formatCurrency(parseNumber(item.precioUnitario))}
+                          </td>
+                          <td className="py-4 text-base font-serif font-medium text-right">
+                            {formatCurrency(parseNumber(item.subtotal))}
+                          </td>
+                          <td className="py-4 text-right space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => startEditing(item)}
+                              className="p-1 rounded hover:bg-black/5 text-muted-foreground hover:text-brand-croissant"
+                              title="Editar ítem"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(item.id)}
+                              className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500"
+                              title="Eliminar ítem"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

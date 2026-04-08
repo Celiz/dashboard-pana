@@ -3,10 +3,13 @@ import prisma from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
+import { startOfMonth, endOfMonth, parseISO } from "date-fns"
 
 export const dynamic = "force-dynamic"
 
-export default async function VentasPage() {
+export default async function VentasPage(props: {
+  searchParams: Promise<{ from?: string; to?: string }>
+}) {
   const session = await auth.api.getSession({
     headers: await headers()
   })
@@ -15,10 +18,26 @@ export default async function VentasPage() {
     redirect("/login")
   }
 
-  // Filtrar por localId si no es administrador maestro
-  const ticketFilter = session.user.localId ? { localId: session.user.localId } : {}
+  const { from, to } = await props.searchParams
 
-  // Obtener tickets recientes usando prisma (limitado a 100 para no saturar inicial)
+  // Por defecto, mostrar el mes actual
+  const now = new Date()
+  const startDate = from ? parseISO(from) : startOfMonth(now)
+  const endDate = to ? parseISO(to) : endOfMonth(now)
+
+  // Filtrar por localId si no es administrador maestro
+  const ticketFilter: any = {
+    fecha: {
+      gte: startDate,
+      lte: endDate,
+    }
+  }
+
+  if (session.user.localId) {
+    ticketFilter.localId = session.user.localId
+  }
+
+  // Obtener tickets en el rango de fechas
   const dbTickets = await prisma.ticketDiario.findMany({
     where: ticketFilter,
     include: { 
@@ -27,8 +46,7 @@ export default async function VentasPage() {
     },
     orderBy: {
       fecha: 'desc'
-    },
-    take: 100
+    }
   })
 
   // Format data for Client Component

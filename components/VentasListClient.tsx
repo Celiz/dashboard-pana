@@ -3,9 +3,13 @@
 import Link from "next/link"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { ArrowLeft, Receipt, Store, Search, ChevronRight } from "lucide-react"
+import { ArrowLeft, Receipt, Store, Search, ChevronRight, Trash2 } from "lucide-react"
+import { deleteTicket } from "@/app/actions/ventas"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { DateFilter } from "./DateFilter"
 
 interface TicketData {
   id: string
@@ -21,6 +25,23 @@ interface VentasListClientProps {
 }
 
 export function VentasListClient({ tickets }: VentasListClientProps) {
+  const router = useRouter()
+  const [isDeleting, setIsDeleting] = useState<string | null>(null)
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("¿Está seguro de que desea eliminar esta venta? Esta acción no se puede deshacer.")) return
+    
+    setIsDeleting(id)
+    try {
+      await deleteTicket(id)
+      router.refresh()
+    } catch (error) {
+      alert("Error al eliminar la venta")
+    } finally {
+      setIsDeleting(null)
+    }
+  }
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("es-AR", {
       style: "currency",
@@ -31,15 +52,19 @@ export function VentasListClient({ tickets }: VentasListClientProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center space-x-4 mb-6">
-        <Link href="/" className="inline-flex h-10 w-10 items-center justify-center rounded-full hover:bg-black/5 transition-colors">
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <div>
-          <h2 className="text-3xl font-serif tracking-tight">Registro de Ventas</h2>
-          <p className="text-muted-foreground mt-1 text-sm">Historial de todos los tickets procesados recientemente.</p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+        <div className="flex items-center space-x-4">
+          <Link href="/" className="inline-flex h-10 w-10 items-center justify-center rounded-full hover:bg-black/5 transition-colors">
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <div>
+            <h2 className="text-3xl font-serif tracking-tight">Registro de Ventas</h2>
+            <p className="text-muted-foreground mt-1 text-sm">Historial de tickets procesados.</p>
+          </div>
         </div>
       </div>
+
+      <DateFilter />
 
       <Card className="rounded-3xl border-border/50 shadow-sm overflow-hidden bg-card/60 backdrop-blur-sm">
         <div className="overflow-x-auto">
@@ -84,13 +109,22 @@ export function VentasListClient({ tickets }: VentasListClientProps) {
                     <td className="px-6 py-4 whitespace-nowrap text-right font-serif font-medium text-base">
                       {formatCurrency(ticket.total)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <td className="px-6 py-4 whitespace-nowrap text-center space-x-2">
                       <Link 
                         href={`/ventas/${ticket.id}`} 
                         className="inline-flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-muted-foreground hover:text-brand-croissant"
+                        title="Ver detalle"
                       >
                         <ChevronRight className="h-5 w-5" />
                       </Link>
+                      <button
+                        onClick={() => handleDelete(ticket.id)}
+                        disabled={isDeleting === ticket.id}
+                        className="inline-flex items-center justify-center p-2 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-muted-foreground hover:text-red-600 disabled:opacity-50"
+                        title="Eliminar venta"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </td>
                   </tr>
                 ))

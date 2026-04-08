@@ -7,6 +7,7 @@ import { ArrowLeft, Store, Calendar, Printer, CheckCircle2, Ticket, Trash2, Edit
 import { deleteTicket, updateVentaItem, deleteVentaItem, updateTicketDate } from "@/app/actions/ventas"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
 
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import type { VentaItem } from "@/app/page"
@@ -26,7 +27,7 @@ export function VentaDetailClient({ ticket }: VentaDetailClientProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [isEditingDate, setIsEditingDate] = useState(false)
-  const [newDate, setNewDate] = useState(ticket.date)
+  const [newDate, setNewDate] = useState<Date>(new Date(ticket.date))
   const [editForm, setEditForm] = useState<{producto: string, cantidad: number, precioUnitario: number}>({
     producto: "",
     cantidad: 0,
@@ -157,19 +158,25 @@ export function VentaDetailClient({ ticket }: VentaDetailClientProps) {
                 </button>
               </p>
               {isEditingDate ? (
-                <div className="space-y-2">
-                  <input
-                    type="datetime-local"
-                    className="w-full bg-background border border-border rounded px-2 py-1 text-xs"
-                    value={format(new Date(newDate), "yyyy-MM-dd'T'HH:mm")}
-                    onChange={(e) => setNewDate(e.target.value)}
+                <div className="space-y-4 pt-2">
+                  <DateTimePicker 
+                    date={newDate} 
+                    onChange={setNewDate} 
                   />
-                  <button
-                    onClick={handleUpdateDate}
-                    className="w-full py-1 bg-brand-croissant text-white rounded text-xs font-medium hover:bg-brand-croissant/90 transition-colors"
-                  >
-                    Guardar Fecha
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleUpdateDate}
+                      className="flex-1 py-2 bg-brand-croissant text-white rounded-xl text-xs font-bold hover:bg-brand-croissant/90 transition-all shadow-sm"
+                    >
+                      Guardar Cambios
+                    </button>
+                    <button
+                      onClick={() => setIsEditingDate(false)}
+                      className="px-3 py-2 bg-secondary text-secondary-foreground rounded-xl text-xs font-bold hover:bg-black/5 transition-all"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <>

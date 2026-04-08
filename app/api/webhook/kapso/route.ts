@@ -121,7 +121,7 @@ async function handleKapsoMessage(incomingMsg: any) {
 
   Devolveme ÚNICAMENTE un objeto JSON válido con la siguiente estructura, sin markdown ni texto adicional:
   {
-    "fecha": "ISO date string or null if not found",
+    "fecha": "YYYY-MM-DD or null if not found",
     "ventas": [
       {
         "producto": "string",
@@ -139,6 +139,7 @@ async function handleKapsoMessage(incomingMsg: any) {
   }
   
   Reglas vitales:
+  - Para la fecha, usa el año actual (2026) si no se especifica. El formato DEBE ser YYYY-MM-DD.
   - Si una línea parece un gasto (ej: "Harina 5000" en columna de salida o con signo menos), ponelo en "gastos".
   - Si en la imagen SOLO hay montos sueltos sin nombre de producto, poné "Venta General" en el campo producto de "ventas".
   - Si no encontrás una fecha, poné null en el campo "fecha".
@@ -167,7 +168,18 @@ async function handleKapsoMessage(incomingMsg: any) {
 
         const ventas = extraido.ventas || [];
         const gastos = extraido.gastos || [];
-        const fechaDetectada = extraido.fecha ? new Date(extraido.fecha) : new Date();
+        
+        // Manejo de fecha con Zona Horaria de Argentina (GMT-3)
+        let fechaDetectada: Date;
+        if (extraido.fecha && typeof extraido.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(extraido.fecha)) {
+            // Si viene YYYY-MM-DD, le forzamos 12:00 en Argentina para evitar saltos de día por horas
+            fechaDetectada = new Date(`${extraido.fecha}T12:00:00-03:00`);
+        } else {
+            // Si no detecta, usamos el "ahora" en Argentina
+            const ahora = new Date();
+            // Ajustamos a mediodía local para consistencia si es una creación nueva
+            fechaDetectada = ahora;
+        }
 
         if (ventas.length === 0 && gastos.length === 0) {
             throw new Error("La IA no detectó ni ventas ni gastos");
@@ -219,7 +231,7 @@ async function handleKapsoMessage(incomingMsg: any) {
         if (ventas.length > 0) mensajeConfirmacion += `\n💰 Ventas: $${totalVentas.toFixed(2)} (${ventas.length} ítems).`;
         if (gastos.length > 0) mensajeConfirmacion += `\n💸 Gastos: $${totalGastos.toFixed(2)} (${gastos.length} conceptos).`;
         mensajeConfirmacion += `\n📈 Neto: $${(totalVentas - totalGastos).toFixed(2)}.`;
-        mensajeConfirmacion += `\n📅 Fecha: ${fechaDetectada.toLocaleDateString('es-AR')}.`;
+        mensajeConfirmacion += `\n📅 Fecha: ${fechaDetectada.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}.`;
 
         await sendKapsoText(senderPhone, mensajeConfirmacion);
         console.log(`✅ Ticket procesado para ${local.nombre}`);

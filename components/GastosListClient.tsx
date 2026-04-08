@@ -3,13 +3,16 @@
 import Link from "next/link"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { ArrowLeft, Wallet, Store, Search, Trash2, Edit2, Check, X, Calendar } from "lucide-react"
+import { ArrowLeft, Wallet, Store, Search, Trash2, Edit2, Check, X, Calendar, FileDown, FileText } from "lucide-react"
 import { updateGasto, deleteGasto } from "@/app/actions/movimientos"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { DateFilter } from "./DateFilter"
+import { exportToCSV, exportToPDF } from "@/lib/exportUtils"
+
 
 interface GastoData {
   id: string
@@ -79,9 +82,36 @@ export function GastosListClient({ gastos }: GastosListClientProps) {
     }).format(value)
   }
 
+  const handleExportCSV = () => {
+    const headers = ["Fecha", "Local", "Concepto", "Monto"]
+    const rows = gastos.map(g => [
+      format(new Date(g.date), "dd/MM/yyyy HH:mm"),
+      g.localName,
+      g.concepto,
+      g.monto
+    ])
+    exportToCSV({ headers, rows, filename: `gastos_${format(new Date(), "yyyy-MM-dd")}`, title: "Registro de Gastos" })
+  }
+
+  const handleExportPDF = () => {
+    const headers = ["Fecha", "Local", "Concepto", "Monto"]
+    const rows = gastos.map(g => [
+      format(new Date(g.date), "dd/MM/yyyy HH:mm"),
+      g.localName,
+      g.concepto,
+      formatCurrency(g.monto)
+    ])
+    exportToPDF({ 
+      headers, 
+      rows, 
+      filename: `gastos_${format(new Date(), "yyyy-MM-dd")}`, 
+      title: "Registro de Gastos" 
+    })
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div className="flex items-center space-x-4">
           <Link href="/" className="inline-flex h-10 w-10 items-center justify-center rounded-full hover:bg-black/5 transition-colors">
             <ArrowLeft className="h-5 w-5" />
@@ -91,7 +121,29 @@ export function GastosListClient({ gastos }: GastosListClientProps) {
             <p className="text-muted-foreground mt-1 text-sm">Historial de salidas de caja.</p>
           </div>
         </div>
+
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleExportCSV}
+            className="rounded-xl border-border/50 bg-card/50 hover:bg-secondary/50"
+          >
+            <FileDown className="h-4 w-4 mr-2 text-brand-matcha" />
+            CSV
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleExportPDF}
+            className="rounded-xl border-border/50 bg-card/50 hover:bg-secondary/50"
+          >
+            <FileText className="h-4 w-4 mr-2 text-brand-croissant" />
+            PDF
+          </Button>
+        </div>
       </div>
+
 
       <DateFilter />
 

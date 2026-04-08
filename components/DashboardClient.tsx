@@ -2,7 +2,9 @@
 
 import { useMemo } from "react"
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts"
-import { Store, Receipt, TrendingUp, DollarSign, ArrowDownCircle, ArrowUpCircle, Wallet } from "lucide-react"
+import { Store, Receipt, TrendingUp, DollarSign, ArrowDownCircle, ArrowUpCircle, Wallet, FileDown, FileText, Download } from "lucide-react"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -10,6 +12,8 @@ import type { Local, TicketDiario, Gasto } from "@/app/page"
 import { PhoneManager } from "./PhoneManager"
 import { DateFilter } from "./DateFilter"
 import { ManualEntry } from "./ManualEntry"
+import { exportCombinedCSV, exportCombinedPDF } from "@/lib/exportUtils"
+
 
 interface DashboardClientProps {
     locales: Local[]
@@ -74,16 +78,75 @@ export function DashboardClient({ locales, tickets, gastos, userLocalId }: Dashb
         }).format(value)
     }
 
+    const handleExportCombined = (type: 'csv' | 'pdf') => {
+        // Combinar y ordenar cronológicamente
+        const combined = [
+            ...tickets.flatMap(t => t.items.map(item => ({
+                date: new Date(t.fecha),
+                tipo: 'Ingreso',
+                local: locales.find(l => l.id === t.localId)?.nombre || 'Local Desconocido',
+                concepto: `${item.producto} x${item.cantidad}`,
+                monto: item.subtotal
+            }))),
+            ...gastos.map(g => ({
+                date: new Date(g.fecha),
+                tipo: 'Gasto',
+                local: locales.find(l => l.id === g.localId)?.nombre || 'Local Desconocido',
+                concepto: g.concepto,
+                monto: g.monto
+            }))
+        ].sort((a, b) => a.date.getTime() - b.date.getTime())
+
+        const headers = ["Fecha", "Concepto", "Ingreso", "Egreso"]
+        const rows = combined.map(item => [
+            format(item.date, "dd/MM/yyyy HH:mm"),
+            `${item.concepto} (${item.local})`,
+            item.tipo === 'Ingreso' ? formatCurrency(item.monto) : "",
+            item.tipo === 'Gasto' ? formatCurrency(item.monto) : ""
+        ])
+
+        const filename = `cuaderno_${format(new Date(), "yyyy-MM-dd")}`
+        const title = "Cuaderno Digital de Movimientos"
+
+        if (type === 'csv') {
+            exportCombinedCSV({ headers, rows, filename, title })
+        } else {
+            exportCombinedPDF({ headers, rows, filename, title })
+        }
+    }
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex-1">
                     <DateFilter />
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleExportCombined('csv')}
+                        className="rounded-xl border-border/50 bg-card/50 hover:bg-secondary/50 h-10 px-4"
+                        title="Exportar Cuaderno CSV"
+                    >
+                        <FileDown className="h-4 w-4 mr-2 text-brand-matcha" />
+                        CSV
+                    </Button>
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleExportCombined('pdf')}
+                        className="rounded-xl border-border/50 bg-card/50 hover:bg-secondary/50 h-10 px-4"
+                        title="Exportar Cuaderno PDF"
+                    >
+                        <FileText className="h-4 w-4 mr-2 text-brand-croissant" />
+                        PDF
+                    </Button>
+                    <div className="h-8 w-[1px] bg-border/50 mx-1" />
                     <ManualEntry locales={locales} userLocalId={userLocalId} />
                 </div>
             </div>
+
             {/* Resumen General */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <Card className="bg-emerald-50/50 dark:bg-emerald-950/10 border-emerald-100 dark:border-emerald-900/50">

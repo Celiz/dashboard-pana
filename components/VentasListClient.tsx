@@ -3,13 +3,16 @@
 import Link from "next/link"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { ArrowLeft, Receipt, Store, Search, ChevronRight, Trash2 } from "lucide-react"
+import { ArrowLeft, Receipt, Store, Search, ChevronRight, Trash2, Download, FileText, FileDown } from "lucide-react"
 import { deleteTicket } from "@/app/actions/ventas"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { DateFilter } from "./DateFilter"
+import { exportToCSV, exportToPDF } from "@/lib/exportUtils"
+
 
 interface TicketData {
   id: string
@@ -50,9 +53,38 @@ export function VentasListClient({ tickets }: VentasListClientProps) {
     }).format(value)
   }
 
+  const handleExportCSV = () => {
+    const headers = ["Fecha", "Local", "Estado", "Items", "Total"]
+    const rows = tickets.map(t => [
+      format(new Date(t.date), "dd/MM/yyyy HH:mm"),
+      t.localName,
+      t.status,
+      t.itemsCount,
+      t.total
+    ])
+    exportToCSV({ headers, rows, filename: `ventas_${format(new Date(), "yyyy-MM-dd")}`, title: "Registro de Ventas" })
+  }
+
+  const handleExportPDF = () => {
+    const headers = ["Fecha", "Local", "Estado", "Items", "Total"]
+    const rows = tickets.map(t => [
+      format(new Date(t.date), "dd/MM/yyyy HH:mm"),
+      t.localName,
+      t.status,
+      t.itemsCount,
+      formatCurrency(t.total)
+    ])
+    exportToPDF({ 
+      headers, 
+      rows, 
+      filename: `ventas_${format(new Date(), "yyyy-MM-dd")}`, 
+      title: "Registro de Ventas" 
+    })
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div className="flex items-center space-x-4">
           <Link href="/" className="inline-flex h-10 w-10 items-center justify-center rounded-full hover:bg-black/5 transition-colors">
             <ArrowLeft className="h-5 w-5" />
@@ -62,7 +94,29 @@ export function VentasListClient({ tickets }: VentasListClientProps) {
             <p className="text-muted-foreground mt-1 text-sm">Historial de tickets procesados.</p>
           </div>
         </div>
+        
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleExportCSV}
+            className="rounded-xl border-border/50 bg-card/50 hover:bg-secondary/50"
+          >
+            <FileDown className="h-4 w-4 mr-2 text-brand-matcha" />
+            CSV
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleExportPDF}
+            className="rounded-xl border-border/50 bg-card/50 hover:bg-secondary/50"
+          >
+            <FileText className="h-4 w-4 mr-2 text-brand-croissant" />
+            PDF
+          </Button>
+        </div>
       </div>
+
 
       <DateFilter />
 

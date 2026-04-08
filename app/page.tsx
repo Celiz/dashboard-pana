@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { LogoutButton } from "@/components/LogoutButton"
-import { startOfMonth, endOfMonth, parseISO } from "date-fns"
+import { startOfMonth, endOfMonth, parseISO, startOfDay, endOfDay } from "date-fns"
 
 export type Telefono = { id: string; numero: string };
 export type Local = { id: string; nombre: string; telefonos: Telefono[] };
@@ -29,8 +29,8 @@ export default async function DashboardPage(props: {
 
     // Por defecto, mostrar el mes actual
     const now = new Date()
-    const startDate = from ? parseISO(from) : startOfMonth(now)
-    const endDate = to ? parseISO(to) : endOfMonth(now)
+    const startDate = from ? startOfDay(parseISO(from)) : startOfMonth(now)
+    const endDate = to ? endOfDay(parseISO(to)) : endOfMonth(now)
 
     // Filtros por local y fecha
     const localFilter = session.user.localId ? { id: session.user.localId } : {};

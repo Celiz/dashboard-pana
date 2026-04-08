@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { startOfMonth, endOfMonth, parseISO } from "date-fns"
+import { startOfMonth, endOfMonth, parseISO, startOfDay, endOfDay } from "date-fns"
 
 export const dynamic = "force-dynamic"
 
@@ -22,8 +22,8 @@ export default async function VentasPage(props: {
 
   // Por defecto, mostrar el mes actual
   const now = new Date()
-  const startDate = from ? parseISO(from) : startOfMonth(now)
-  const endDate = to ? parseISO(to) : endOfMonth(now)
+  const startDate = from ? startOfDay(parseISO(from)) : startOfMonth(now)
+  const endDate = to ? endOfDay(parseISO(to)) : endOfMonth(now)
 
   // Filtrar por localId si no es administrador maestro
   const ticketFilter: any = {
